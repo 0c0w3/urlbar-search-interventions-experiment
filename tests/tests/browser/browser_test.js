@@ -3,112 +3,166 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.jsm",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
-  UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.jsm",
-  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
-});
-
-// The path of the add-on file relative to `getTestFilePath`.
-const ADDON_PATH = "urlbar_interventions-1.0.0.zip";
-
-// Use SIGNEDSTATE_MISSING when testing an unsigned, in-development version of
-// the add-on and SIGNEDSTATE_PRIVILEGED when testing the production add-on.
-const EXPECTED_ADDON_SIGNED_STATE = AddonManager.SIGNEDSTATE_MISSING;
-// const EXPECTED_ADDON_SIGNED_STATE = AddonManager.SIGNEDSTATE_PRIVILEGED;
-
-const CONTROL_BRANCH = "control";
-const TREATMENT_BRANCH = "treatment";
-
-const EVENT_TELEMETRY_PREF = "eventTelemetry.enabled";
-
-/**
- * Asserts that the browser UI has the treatment properly applied.
- *
- * @param {window} win
- *   The browser window to test.
- */
-async function assertAppliedTreatmentToUI(win = window) {
-  //XXX assertions here
-}
-
-/**
- * Asserts that the browser UI does not have the treatment applied.
- *
- * @param {window} win
- *   The browser window to test.
- */
-async function assertNotAppliedTreatmentToUI(win = window) {
-  //XXX assertions here
-}
-
-/**
- * Asserts that everything is set up properly to reflect enrollment in the
- * study.
- *
- * @param {bool} isTreatmentBranch
- *   True if the enrolled branch is treatment and false if control.
- */
-async function assertEnrolled(isTreatmentBranch) {
-  Assert.equal(UrlbarPrefs.get(EVENT_TELEMETRY_PREF), true);
-  if (isTreatmentBranch) {
-    await assertAppliedTreatmentToUI();
-  } else {
-    await assertNotAppliedTreatmentToUI();
-  }
-}
-
-/**
- * Asserts that everything is set up properly to reflect no enrollment in the
- * study.
- */
-async function assertNotEnrolled() {
-  Assert.equal(UrlbarPrefs.get(EVENT_TELEMETRY_PREF), false);
-  await assertNotAppliedTreatmentToUI();
-}
-
 add_task(async function init() {
-  await PlacesUtils.history.clear();
-  await PlacesUtils.bookmarks.eraseEverything();
-
   await initAddonTest(ADDON_PATH, EXPECTED_ADDON_SIGNED_STATE);
+  makeProfileResettable();
 });
 
-add_task(async function treatment() {
-  await withStudy({ branch: TREATMENT_BRANCH }, async () => {
+// Tests the refresh tip on the treatment branch.
+add_task(async function refresh_treatment() {
+  await withStudy({ branch: BRANCHES.TREATMENT }, async () => {
     await withAddon(async () => {
-      await assertEnrolled(true);
+      // Pick the tip, which should open the refresh dialog.  Click its cancel
+      // button.
+      await doTreatmentTest({
+        searchString: "refresh",
+        tip: TIPS.REFRESH,
+        title:
+          "Restore default settings and remove old add-ons for optimal performance.",
+        button: "Refresh Firefox…",
+        awaitCallback() {
+          return BrowserTestUtils.promiseAlertDialog(
+            "cancel",
+            "chrome://global/content/resetProfile.xul"
+          );
+        },
+      });
     });
   });
 });
 
-add_task(async function control() {
-  await withStudy({ branch: CONTROL_BRANCH }, async () => {
+// Tests the refresh tip on the control branch.
+add_task(async function refresh_control() {
+  await withStudy({ branch: BRANCHES.CONTROL }, async () => {
     await withAddon(async () => {
-      await assertEnrolled(false);
+      await doControlTest({
+        searchString: "refresh",
+        tip: TIPS.REFRESH,
+      });
+    });
+  });
+});
+
+// Tests the clear tip on the treatment branch.
+add_task(async function clear_treatment() {
+  await withStudy({ branch: BRANCHES.TREATMENT }, async () => {
+    await withAddon(async () => {
+      // Pick the tip, which should open the refresh dialog.  Click its cancel
+      // button.
+      await doTreatmentTest({
+        searchString: "clear",
+        tip: TIPS.CLEAR,
+        title: "Clear Firefox’s cache, cookies, history and more.",
+        button: "Choose What to Clear…",
+        awaitCallback() {
+          return BrowserTestUtils.promiseAlertDialog(
+            "cancel",
+            "chrome://browser/content/sanitize.xul"
+          );
+        },
+      });
+    });
+  });
+});
+
+// Tests the clear tip on the control branch.
+add_task(async function clear_control() {
+  await withStudy({ branch: BRANCHES.CONTROL }, async () => {
+    await withAddon(async () => {
+      await doControlTest({
+        searchString: "clear",
+        tip: TIPS.CLEAR,
+      });
+    });
+  });
+});
+
+// Makes sure engagement event telemetry is recorded on the treatment branch.
+// We have a separate comprehensive test in the tree for engagement event
+// telemetry, so we don't test everything here.  We only make sure that it's
+// recorded.
+add_task(async function eventTelemetry_treatment() {
+  Services.telemetry.clearScalars();
+  Services.telemetry.clearEvents();
+  await withStudy({ branch: BRANCHES.TREATMENT }, async () => {
+    await withAddon(async () => {
+      // Start a search.
+      await UrlbarTestUtils.promiseAutocompleteResultPopup({
+        window,
+        value: "test",
+        waitForFocus,
+        fireInputEvent: true,
+      });
+
+      // Blur the urlbar so that the engagement is ended.
+      await UrlbarTestUtils.promisePopupClose(window, () => gURLBar.blur());
+
+      TelemetryTestUtils.assertEvents([
+        {
+          category: "urlbar",
+          method: "abandonment",
+          object: "blur",
+          value: "typed",
+          extra: {
+            elapsed: val => parseInt(val) > 0,
+            numChars: "4",
+          },
+        },
+      ]);
+    });
+  });
+});
+
+// Makes sure engagement event telemetry is recorded on the control branch.
+add_task(async function eventTelemetry_control() {
+  Services.telemetry.clearScalars();
+  Services.telemetry.clearEvents();
+  await withStudy({ branch: BRANCHES.CONTROL }, async () => {
+    await withAddon(async () => {
+      // Start a search.
+      await UrlbarTestUtils.promiseAutocompleteResultPopup({
+        window,
+        value: "test",
+        waitForFocus,
+        fireInputEvent: true,
+      });
+
+      // Blur the urlbar so that the engagement is ended.
+      await UrlbarTestUtils.promisePopupClose(window, () => gURLBar.blur());
+
+      TelemetryTestUtils.assertEvents([
+        {
+          category: "urlbar",
+          method: "abandonment",
+          object: "blur",
+          value: "typed",
+          extra: {
+            elapsed: val => parseInt(val) > 0,
+            numChars: "4",
+          },
+        },
+      ]);
     });
   });
 });
 
 add_task(async function unenrollAfterInstall() {
-  await withStudy({ branch: TREATMENT_BRANCH }, async study => {
+  await withStudy({ branch: BRANCHES.TREATMENT }, async study => {
     await withAddon(async () => {
-      await assertEnrolled(true);
       await Promise.all([
         awaitAddonMessage("unenrolled"),
         AddonStudies.markAsEnded(study),
       ]);
-      await assertNotEnrolled();
+      await awaitNoTip("refresh");
     });
   });
 });
 
 add_task(async function unenrollBeforeInstall() {
-  await withStudy({ branch: TREATMENT_BRANCH }, async study => {
+  await withStudy({ branch: BRANCHES.TREATMENT }, async study => {
     await AddonStudies.markAsEnded(study);
     await withAddon(async () => {
-      await assertNotEnrolled();
+      await awaitNoTip("refresh");
     });
   });
 });
@@ -116,7 +170,7 @@ add_task(async function unenrollBeforeInstall() {
 add_task(async function noBranch() {
   await withStudy({}, async () => {
     await withAddon(async () => {
-      await assertNotEnrolled();
+      await awaitNoTip("refresh");
     });
   });
 });
@@ -124,95 +178,7 @@ add_task(async function noBranch() {
 add_task(async function unrecognizedBranch() {
   await withStudy({ branch: "bogus" }, async () => {
     await withAddon(async () => {
-      await assertNotEnrolled();
-    });
-  });
-});
-
-add_task(async function noStudy() {
-  if (EXPECTED_ADDON_SIGNED_STATE == AddonManager.SIGNEDSTATE_MISSING) {
-    info("This test doesn't apply to an unsigned add-on, skipping.");
-    return;
-  }
-  await withAddon(async addon => {
-    await assertNotEnrolled();
-  });
-});
-
-add_task(async function unrelatedStudy() {
-  if (EXPECTED_ADDON_SIGNED_STATE == AddonManager.SIGNEDSTATE_MISSING) {
-    info("This test doesn't apply to an unsigned add-on, skipping.");
-    return;
-  }
-  await withStudy(
-    {
-      addonId: "someOtherAddon@mozilla.org",
-      branch: TREATMENT_BRANCH,
-    },
-    async () => {
-      await withAddon(async () => {
-        await assertNotEnrolled();
-      });
-    }
-  );
-});
-
-// Checks engagement event telemetry while enrolled in the study on the
-// treatment branch.  We have a separate comprehensive test in the tree for this
-// telemetry, so we don't test everything here.  We only make sure that the
-// telemetry is indeed recorded.
-add_task(async function telemetryTreatment() {
-  Services.telemetry.clearEvents();
-  await withStudy({ branch: TREATMENT_BRANCH }, async () => {
-    await withAddon(async () => {
-      //XXX Do whatever triggers the telemetry in your case.  Then for example:
-      /*
-      TelemetryTestUtils.assertEvents([
-        {
-          category: "urlbar",
-          method: "engagement",
-          object: "click",
-          value: "topsites",
-          extra: {
-            elapsed: val => parseInt(val) > 0,
-            numChars: "0",
-            selIndex: "1",
-            selType: "history",
-          },
-        },
-      ]);
-      */
-    });
-  });
-});
-
-// Checks engagement event telemetry while enrolled in the study on the control
-// branch.
-add_task(async function telemetryControl() {
-  Services.telemetry.clearEvents();
-  await withStudy({ branch: CONTROL_BRANCH }, async () => {
-    await withAddon(async () => {
-      //XXX Do whatever triggers the telemetry in your case.  Then for example:
-      /*
-      // This is actually the same telemetry that should have been recorded on
-      // the treatment branch.  (See the treatment-branch test above.)  We will
-      // be able to distinguish between treatment and control telemetry in the
-      // telemetry pings.
-      TelemetryTestUtils.assertEvents([
-        {
-          category: "urlbar",
-          method: "engagement",
-          object: "click",
-          value: "topsites",
-          extra: {
-            elapsed: val => parseInt(val) > 0,
-            numChars: "0",
-            selIndex: "1",
-            selType: "history",
-          },
-        },
-      ]);
-      */
+      await awaitNoTip("refresh");
     });
   });
 });
