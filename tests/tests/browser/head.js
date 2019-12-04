@@ -365,11 +365,11 @@ async function doControlTest({ searchString, tip } = {}) {
   await UrlbarTestUtils.promisePopupClose(window, () => gURLBar.blur());
 
   // Shown-count telemetry should be updated, but not picked count.
-  await TestUtils.waitForCondition(() => {
-    return (
-      TELEMETRY_SHOWN in TelemetryTestUtils.getProcessScalars("dynamic", true)
-    );
-  }, "Wait for telemetry to be recorded");
+  await TestUtils.waitForCondition(
+    () =>
+      TELEMETRY_SHOWN in TelemetryTestUtils.getProcessScalars("dynamic", true),
+    "Wait for telemetry to be recorded"
+  );
   let scalars = TelemetryTestUtils.getProcessScalars("dynamic", true, true);
   TelemetryTestUtils.assertKeyedScalar(scalars, TELEMETRY_SHOWN, tip, 1);
   Assert.ok(!(TELEMETRY_PICKED in scalars));
