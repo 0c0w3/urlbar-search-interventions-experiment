@@ -174,7 +174,10 @@ async function onBehaviorRequested(query) {
         currentTip = TIPS.UPDATE_WEB;
         break;
     }
-  } else if (topDocIDs.has("clear")) {
+  } else if (
+    topDocIDs.has("clear") &&
+    !(await browser.tabs.query({ active: true })).incognito
+  ) {
     currentTip = TIPS.CLEAR;
   } else if (topDocIDs.has("refresh")) {
     currentTip = TIPS.REFRESH;
