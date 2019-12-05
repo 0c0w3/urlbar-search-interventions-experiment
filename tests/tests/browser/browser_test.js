@@ -77,6 +77,33 @@ add_task(async function clear_control() {
   });
 });
 
+// Tests the clear tip on the treatment branch in a private window.  The clear
+// tip shouldn't appear in private windows.
+add_task(async function clear_treatment_private() {
+  await withStudy({ branch: BRANCHES.TREATMENT }, async () => {
+    await withAddon(async () => {
+      let win = await BrowserTestUtils.openNewBrowserWindow({ private: true });
+
+      // Do a search that would trigger the tip.
+      await awaitNoTip("clear", win);
+
+      // Blur the urlbar so that the engagement is ended.
+      await UrlbarTestUtils.promisePopupClose(win, () => win.gURLBar.blur());
+
+      // Telemetry shouldn't be updated.  Wait a moment before checking because
+      // the telemetry would be recorded asyncly.
+      // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+      await new Promise(r => setTimeout(r, 500));
+
+      let scalars = TelemetryTestUtils.getProcessScalars("dynamic", true, true);
+      Assert.ok(!(TELEMETRY_SHOWN in scalars));
+      Assert.ok(!(TELEMETRY_PICKED in scalars));
+
+      await BrowserTestUtils.closeWindow(win);
+    });
+  });
+});
+
 // Makes sure engagement event telemetry is recorded on the treatment branch.
 // We have a separate comprehensive test in the tree for engagement event
 // telemetry, so we don't test everything here.  We only make sure that it's

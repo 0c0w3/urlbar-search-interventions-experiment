@@ -543,9 +543,9 @@ async function awaitTip(searchString) {
  * @param {string} searchString
  *   The search string.
  */
-async function awaitNoTip(searchString) {
+async function awaitNoTip(searchString, win = window) {
   let context = await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window,
+    window: win,
     value: searchString,
     waitForFocus,
     fireInputEvent: true,
