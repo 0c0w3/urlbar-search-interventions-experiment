@@ -176,7 +176,7 @@ async function onBehaviorRequested(query) {
     }
   } else if (
     topDocIDs.has("clear") &&
-    !(await browser.tabs.query({ active: true })).incognito
+    !(await browser.windows.getLastFocused()).incognito
   ) {
     currentTip = TIPS.CLEAR;
   } else if (topDocIDs.has("refresh")) {

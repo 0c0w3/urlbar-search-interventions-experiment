@@ -523,9 +523,9 @@ async function processUpdateStep(step) {
  * @return {[result, element]}
  *   The result and its element in the DOM.
  */
-async function awaitTip(searchString) {
+async function awaitTip(searchString, win = window) {
   let context = await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window,
+    window: win,
     value: searchString,
     waitForFocus,
     fireInputEvent: true,
@@ -533,7 +533,7 @@ async function awaitTip(searchString) {
   Assert.ok(context.results.length >= 2);
   let result = context.results[1];
   Assert.equal(result.type, UrlbarUtils.RESULT_TYPE.TIP);
-  let element = await UrlbarTestUtils.waitForAutocompleteResultAt(window, 1);
+  let element = await UrlbarTestUtils.waitForAutocompleteResultAt(win, 1);
   return [result, element];
 }
 

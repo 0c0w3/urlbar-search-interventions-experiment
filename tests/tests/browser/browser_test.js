@@ -80,28 +80,66 @@ add_task(async function clear_control() {
 // Tests the clear tip on the treatment branch in a private window.  The clear
 // tip shouldn't appear in private windows.
 add_task(async function clear_treatment_private() {
+  // Non-Mozilla-signed extensions are disabled in PBM by default, so if we're
+  // testing an unsigned extension, this test would erroneously pass just
+  // because no tips would appear at all.  Set this pref to make sure the
+  // extension works in PBM.
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.allowPrivateBrowsingByDefault", true]],
+  });
+
   await withStudy({ branch: BRANCHES.TREATMENT }, async () => {
     await withAddon(async () => {
       let win = await BrowserTestUtils.openNewBrowserWindow({ private: true });
 
-      // Do a search that would trigger the tip.
+      // First, make sure the extension works in PBM by triggering a non-clear
+      // tip.
+      let result = (await awaitTip("refresh", win))[0];
+      Assert.strictEqual(result.payload.type, TIPS.REFRESH);
+
+      // Blur the urlbar so that the engagement is ended.
+      await UrlbarTestUtils.promisePopupClose(win, () => win.gURLBar.blur());
+
+      // Now do a search that would trigger the clear tip.
       await awaitNoTip("clear", win);
 
       // Blur the urlbar so that the engagement is ended.
       await UrlbarTestUtils.promisePopupClose(win, () => win.gURLBar.blur());
 
-      // Telemetry shouldn't be updated.  Wait a moment before checking because
-      // the telemetry would be recorded asyncly.
+      // The refresh tip should be recorded in telemetry, but the clear tip
+      // should not.  Wait a moment before checking because the clear tip
+      // telemetry would be recorded asyncly.
       // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
       await new Promise(r => setTimeout(r, 500));
 
       let scalars = TelemetryTestUtils.getProcessScalars("dynamic", true, true);
-      Assert.ok(!(TELEMETRY_SHOWN in scalars));
+
+      // First, check the refresh tip using the telemetry helper.
+      TelemetryTestUtils.assertKeyedScalar(
+        scalars,
+        TELEMETRY_SHOWN,
+        TIPS.REFRESH,
+        1
+      );
+
+      // Now check it without the helper.  There's no helper for checking for
+      // the absence of telemetry, so we have to check for the absence of the
+      // clear tip telemetry in this manner.  We want to make sure we're doing
+      // it right.
+      Assert.ok(TELEMETRY_SHOWN in scalars);
+      Assert.ok(TIPS.REFRESH in scalars[TELEMETRY_SHOWN]);
+      Assert.equal(scalars[TELEMETRY_SHOWN][TIPS.REFRESH], 1);
+
+      // Finally, check the absence of the clear tip telemetry and picked
+      // telemetry.
+      Assert.ok(!(TIPS.CLEAR in scalars[TELEMETRY_SHOWN]));
       Assert.ok(!(TELEMETRY_PICKED in scalars));
 
       await BrowserTestUtils.closeWindow(win);
     });
   });
+
+  await SpecialPowers.popPrefEnv();
 });
 
 // Makes sure engagement event telemetry is recorded on the treatment branch.
