@@ -260,8 +260,12 @@ async function onResultsRequested(query) {
 
 /**
  * browser.urlbar.onResultPicked listener.  Called when a tip button is picked.
+ *
+ * IMPORTANT: This function should not `await` anything before performing the
+ * tip action, and for that reason it's not declared async.  See the IMPORTANT
+ * comment below.
  */
-async function onResultPicked(payload) {
+function onResultPicked(payload) {
   let tip = payload.type;
 
   // Set tipPicked so our onEngagement listener knows a tip was picked.
@@ -294,10 +298,10 @@ async function onResultPicked(payload) {
 
   // Do the tip action.
   //
-  // IMPORTANT: Don't `await` anything before this!  Some of these functions are
-  // declared with `requireUserInput` and therefore must be called directly by a
-  // click, keypress, etc.  That means they must be called on the same stack as
-  // the initial user input event.  Otherwise they'll fail.
+  // IMPORTANT: Don't `await` anything before this!  Some of these functions we
+  // are declared with `requireUserInput` and therefore must be called directly
+  // by a click, keypress, etc.  That means they must be called on the same
+  // stack as the initial user input event.  Otherwise they'll fail.
   switch (tip) {
     case TIPS.CLEAR:
       browser.experiments.urlbar.openClearHistoryDialog();
@@ -337,7 +341,7 @@ async function onResultPicked(payload) {
  *
  * @param {array} tips
  *   The tip type(s) that triggered the survey.
- * @param {string} [action]
+ * @param {string} action
  *   The reason for opening the survey:
  *     * "picked": The user picked a tip.
  *     * "ignored": One or more tips were shown in an engagement, but the user
