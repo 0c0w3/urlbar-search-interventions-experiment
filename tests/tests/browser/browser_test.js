@@ -211,6 +211,92 @@ add_task(async function eventTelemetry_control() {
   });
 });
 
+// Tests the survey web page on the treatment branch after picking a tip.
+add_task(async function survey_treatmentPicked() {
+  await withStudy({ branch: BRANCHES.TREATMENT }, async () => {
+    await withAddon(async () => {
+      await forceSurvey(FORCE_SURVEY_ENABLE);
+      let tabPromise = BrowserTestUtils.waitForNewTab(gBrowser);
+      await awaitTip("clear");
+      await Promise.all([
+        pickTip(),
+        BrowserTestUtils.promiseAlertDialog(
+          "cancel",
+          "chrome://browser/content/sanitize.xul"
+        ),
+      ]);
+      let tab = await tabPromise;
+      Assert.equal(
+        tab.linkedBrowser.currentURI.spec,
+        "http://example.com/?b=treatment&action=picked&tip=clear"
+      );
+      BrowserTestUtils.removeTab(tab);
+    });
+  });
+});
+
+// Tests the survey web page on the treatment branch after ignoring a tip.
+add_task(async function survey_treatmentIgnored() {
+  await withStudy({ branch: BRANCHES.TREATMENT }, async () => {
+    await withAddon(async () => {
+      await forceSurvey(FORCE_SURVEY_ENABLE);
+      let tabPromise = BrowserTestUtils.waitForNewTab(gBrowser);
+      await awaitTip("clear");
+      await UrlbarTestUtils.promisePopupClose(window, () => gURLBar.blur());
+      let tab = await tabPromise;
+      Assert.equal(
+        tab.linkedBrowser.currentURI.spec,
+        "http://example.com/?b=treatment&action=ignored&tip=clear"
+      );
+      BrowserTestUtils.removeTab(tab);
+    });
+  });
+});
+
+// Tests the survey web page on the control branch.
+add_task(async function survey_control() {
+  await withStudy({ branch: BRANCHES.CONTROL }, async () => {
+    await withAddon(async () => {
+      await forceSurvey(FORCE_SURVEY_ENABLE);
+      let tabPromise = BrowserTestUtils.waitForNewTab(gBrowser);
+      await awaitNoTip("clear");
+      await UrlbarTestUtils.promisePopupClose(window, () => gURLBar.blur());
+      let tab = await tabPromise;
+      Assert.equal(
+        tab.linkedBrowser.currentURI.spec,
+        "http://example.com/?b=control&action=ignored&tip=clear"
+      );
+      BrowserTestUtils.removeTab(tab);
+    });
+  });
+});
+
+// The survey web page shouldn't be shown more than once per session.
+add_task(async function survey_twice() {
+  await withStudy({ branch: BRANCHES.TREATMENT }, async () => {
+    await withAddon(async () => {
+      await forceSurvey(FORCE_SURVEY_ENABLE);
+      let tabPromise = BrowserTestUtils.waitForNewTab(gBrowser);
+      await awaitTip("clear");
+      await UrlbarTestUtils.promisePopupClose(window, () => gURLBar.blur());
+      let tab = await tabPromise;
+      Assert.equal(
+        tab.linkedBrowser.currentURI.spec,
+        "http://example.com/?b=treatment&action=ignored&tip=clear"
+      );
+      BrowserTestUtils.removeTab(tab);
+
+      let count = gBrowser.tabs.length;
+      Assert.equal(typeof count, "number", "Sanity check");
+      await awaitTip("clear");
+      await UrlbarTestUtils.promisePopupClose(window, () => gURLBar.blur());
+      // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+      await new Promise(r => setTimeout(r, 1000));
+      Assert.equal(count, gBrowser.tabs.length);
+    });
+  });
+});
+
 add_task(async function unenrollAfterInstall() {
   await withStudy({ branch: BRANCHES.TREATMENT }, async study => {
     await withAddon(async () => {

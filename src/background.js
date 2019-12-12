@@ -105,6 +105,9 @@ const TELEMETRY_SHOWN = `${TELEMETRY_ROOT}.${TELEMETRY_SHOWN_PART}`;
 const TELEMETRY_PICKED_PART = "tipPickedCount";
 const TELEMETRY_PICKED = `${TELEMETRY_ROOT}.${TELEMETRY_PICKED_PART}`;
 
+// We open this survey web page in certain cases.
+const SURVEY_URL = "https://qsurvey.mozilla.com/s3/Search-Interventions";
+
 // The current study branch.
 let studyBranch;
 
@@ -116,6 +119,13 @@ let queryScorer = new QueryScorer();
 
 // Tips shown in the current engagement (TIPS values).
 let tipsShownInCurrentEngagement = new Set();
+
+// Set to true when a tip is picked so that our onEngagement listener can know
+// whether an engagement happens due to that.
+let tipPicked = false;
+
+// True when we've opened the survey during a browser session.
+let openedSurvey = false;
 
 /**
  * browser.urlbar.onBehaviorRequested listener.
@@ -130,7 +140,6 @@ async function onBehaviorRequested(query) {
   // Get the scores and the top score.
   let docScores = queryScorer.score(query.searchString);
   let topDocScore = docScores[0];
-  console.debug(docScores);
 
   // Multiple docs may have the top score, so collect them all.
   let topDocIDs = new Set();
@@ -253,10 +262,43 @@ async function onResultsRequested(query) {
  * browser.urlbar.onResultPicked listener.  Called when a tip button is picked.
  */
 async function onResultPicked(payload) {
-  // Update picked-count telemetry.
-  browser.telemetry.keyedScalarAdd(TELEMETRY_PICKED, payload.type, 1);
+  let tip = payload.type;
 
-  switch (payload.type) {
+  // Set tipPicked so our onEngagement listener knows a tip was picked.
+  tipPicked = true;
+
+  // Update picked-count telemetry.
+  browser.telemetry.keyedScalarAdd(TELEMETRY_PICKED, tip, 1);
+
+  // We open a survey 100% of the time a tip is picked.  If the browser will not
+  // restart due to the user's picking the tip, we open the survey now (below).
+  // If the browser will restart, we open the survey after restart (in enroll).
+
+  // Determine whether the browser will restart.  For REFRESH and UPDATE_REFRESH
+  // we show the profile-reset dialog, which the user can cancel, but for our
+  // purposes we assume the browser will restart.
+  let willRestart = false;
+  switch (tip) {
+    case TIPS.REFRESH:
+    case TIPS.UPDATE_ASK:
+    case TIPS.UPDATE_REFRESH:
+    case TIPS.UPDATE_RESTART:
+      willRestart = true;
+      break;
+  }
+
+  // If we're restarting, save the picked tip type in storage.
+  if (willRestart) {
+    browser.storage.local.set({ surveyPickedTip: tip });
+  }
+
+  // Do the tip action.
+  //
+  // IMPORTANT: Don't `await` anything before this!  Some of these functions are
+  // declared with `requireUserInput` and therefore must be called directly by a
+  // click, keypress, etc.  That means they must be called on the same stack as
+  // the initial user input event.  Otherwise they'll fail.
+  switch (tip) {
     case TIPS.CLEAR:
       browser.experiments.urlbar.openClearHistoryDialog();
       break;
@@ -274,6 +316,71 @@ async function onResultPicked(payload) {
       browser.tabs.create({ url: "https://www.mozilla.org/firefox/new/" });
       break;
   }
+
+  // If we're not restarting, open the survey now.
+  if (!willRestart) {
+    maybeOpenSurvey([tip], "picked");
+  }
+}
+
+/**
+ * We open a user survey web page in three cases:
+ *
+ * (1) Treatment: When the user picks a tip.
+ * (2) Treatment: When the user is shown a tip but they don't pick it.
+ * (3) Control: When the user would have been shown a tip.
+ *
+ * For (1), we open the survey 100% of the time.  For (2) and (3), we open it
+ * only some of the time so that the number of users shown the survey in all
+ * three cases is roughly the same.  Since we expect a pick rate of ~2%, we open
+ * the survey in (2) and (3) only 2% of the time this method is called.
+ *
+ * @param {array} tips
+ *   The tip type(s) that triggered the survey.
+ * @param {string} [action]
+ *   The reason for opening the survey:
+ *     * "picked": The user picked a tip.
+ *     * "ignored": One or more tips were shown in an engagement, but the user
+ *       didn't pick any.
+ *   On the control branch, the action should always be "ignored".
+ */
+async function maybeOpenSurvey(tips, action) {
+  if (openedSurvey) {
+    // Don't open the survey more than once per session.
+    return;
+  }
+
+  // Determine whether we should open the survey.  Tests and QA can set
+  // storage.forceSurvey to an integer value to bypass the randomness logic.
+  // Possible values:
+  //
+  // * 0 (or undefined): Don't force either way
+  // * 1: Force it to open
+  // * 2: Force it not to open
+
+  let storage = await browser.storage.local.get(null);
+  if (storage && storage.forceSurvey == 2) {
+    // Don't open it.
+    return;
+  }
+
+  if (action != "picked" && Math.random() > 0.02) {
+    if (!storage || !storage.forceSurvey) {
+      // Don't open it.
+      return;
+    }
+  }
+
+  // Open it.
+  let spec = (storage && storage.surveyURL) || SURVEY_URL;
+  let url = new URL(spec);
+  url.searchParams.set("b", studyBranch);
+  url.searchParams.set("action", action);
+  for (let tip of tips) {
+    url.searchParams.append("tip", tip);
+  }
+  await browser.tabs.create({ url: url.toString(), active: false });
+  openedSurvey = true;
 }
 
 /**
@@ -281,11 +388,29 @@ async function onResultPicked(payload) {
  * stops.
  */
 async function onEngagement(state) {
+  if (!tipsShownInCurrentEngagement.size) {
+    return;
+  }
+
   if (["engagement", "abandonment"].includes(state)) {
-    for (let tip of tipsShownInCurrentEngagement) {
+    let tips = Array.from(tipsShownInCurrentEngagement);
+    for (let tip of tips) {
       browser.telemetry.keyedScalarAdd(TELEMETRY_SHOWN, tip, 1);
     }
+
+    // Tips were shown during the engagement, but at this point we don't know
+    // whether the user picked one (because onEngagement is fired before
+    // onResultPicked, unfortunately).  So wait a bit to see if onResultPicked
+    // is called and sets tipPicked.  If not, then the user ignored the tips,
+    // and we may need to open the survey.
+    tipPicked = false;
+    setTimeout(() => {
+      if (!tipPicked) {
+        maybeOpenSurvey(tips, "ignored");
+      }
+    }, 200);
   }
+
   tipsShownInCurrentEngagement.clear();
 }
 
@@ -353,6 +478,13 @@ async function enroll() {
   // Trigger a browser update check.  (This won't actually check if updates are
   // disabled for some reason, e.g., by policy.)
   await browser.experiments.urlbar.checkForBrowserUpdate();
+
+  // If we need to open a survey on startup (see onResultPicked), do so now.
+  let storage = await browser.storage.local.get(null);
+  if (storage && storage.surveyPickedTip) {
+    await maybeOpenSurvey([storage.surveyPickedTip], "picked");
+    await browser.storage.local.clear();
+  }
 
   sendTestMessage("enrolled");
 }

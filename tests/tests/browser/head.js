@@ -12,6 +12,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AddonStudies: "resource://normandy/lib/AddonStudies.jsm",
   AddonTestUtils: "resource://testing-common/AddonTestUtils.jsm",
+  ExtensionStorageIDB: "resource://gre/modules/ExtensionStorageIDB.jsm",
   NormandyTestUtils: "resource://testing-common/NormandyTestUtils.jsm",
   ResetProfile: "resource://gre/modules/ResetProfile.jsm",
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.jsm",
@@ -19,8 +20,12 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
 });
 
+const { WebExtensionPolicy } = Cu.getGlobalForObject(
+  ChromeUtils.import("resource://gre/modules/Services.jsm", {})
+);
+
 // The path of the add-on file relative to `getTestFilePath`.
-const ADDON_PATH = "urlbar_interventions-1.0.0.zip";
+const ADDON_PATH = "urlbar_interventions-1.0a1.zip";
 
 // Use SIGNEDSTATE_MISSING when testing an unsigned, in-development version of
 // the add-on and SIGNEDSTATE_PRIVILEGED when testing the production add-on.
@@ -47,6 +52,11 @@ const TELEMETRY_SHOWN_PART = "tipShownCount";
 const TELEMETRY_SHOWN = `${TELEMETRY_ROOT}.${TELEMETRY_SHOWN_PART}`;
 const TELEMETRY_PICKED_PART = "tipPickedCount";
 const TELEMETRY_PICKED = `${TELEMETRY_ROOT}.${TELEMETRY_PICKED_PART}`;
+
+const SURVEY_URL = "https://qsurvey.mozilla.com/s3/Search-Interventions";
+
+const FORCE_SURVEY_ENABLE = 1;
+const FORCE_SURVEY_DISABLE = 2;
 
 // For our app-update tests, we use helpers from the About window app-update
 // tests.
@@ -326,6 +336,9 @@ async function doTreatmentTest({
   button,
   awaitCallback,
 } = {}) {
+  Services.telemetry.clearScalars();
+  await forceSurvey(FORCE_SURVEY_DISABLE);
+
   // Do a search that triggers the tip.
   let [result, element] = await awaitTip(searchString);
   Assert.strictEqual(result.payload.type, tip);
@@ -358,6 +371,9 @@ async function doTreatmentTest({
  *   The expected tip type (which should not appear).
  */
 async function doControlTest({ searchString, tip } = {}) {
+  Services.telemetry.clearScalars();
+  await forceSurvey(FORCE_SURVEY_DISABLE);
+
   // Do a search that would trigger the tip.
   await awaitNoTip(searchString);
 
@@ -610,4 +626,33 @@ function makeProfileResettable() {
       "Shouldn't be able to reset from mochitest's temporary profile once removed from the profile manager."
     );
   });
+}
+
+/**
+ * Gets a connection to the extension's "local" storage, which is an IndexedDB
+ * database.
+ *
+ * @return {object}
+ *   The IndexedDB connection.
+ */
+async function getExtensionStorage() {
+  let policy = WebExtensionPolicy.getByID(gAddonID);
+  let storagePrincipal = ExtensionStorageIDB.getStoragePrincipal(
+    policy.extension
+  );
+  return ExtensionStorageIDB.open(storagePrincipal);
+}
+
+/**
+ * Sets the `forceSurvey` value in the extension's local storage.
+ *
+ * @return {number} value
+ *   The value to set:
+ *   * 0 (or undefined): Don't force either way
+ *   * 1: Force the survey to open
+ *   * 2: Force the survey not to open
+ */
+async function forceSurvey(value) {
+  let conn = await getExtensionStorage();
+  await conn.set({ surveyURL: "http://example.com/", forceSurvey: value });
 }
