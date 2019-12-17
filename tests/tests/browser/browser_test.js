@@ -21,10 +21,10 @@ add_task(async function refresh_treatment() {
           "Restore default settings and remove old add-ons for optimal performance.",
         button: "Refresh Firefox…",
         awaitCallback() {
-          return BrowserTestUtils.promiseAlertDialog(
-            "cancel",
-            "chrome://global/content/resetProfile.xul"
-          );
+          return promiseAlertDialog("cancel", [
+            "chrome://global/content/resetProfile.xhtml",
+            "chrome://global/content/resetProfile.xul",
+          ]);
         },
       });
     });
@@ -55,10 +55,10 @@ add_task(async function clear_treatment() {
         title: "Clear Firefox’s cache, cookies, history and more.",
         button: "Choose What to Clear…",
         awaitCallback() {
-          return BrowserTestUtils.promiseAlertDialog(
-            "cancel",
-            "chrome://browser/content/sanitize.xul"
-          );
+          return promiseAlertDialog("cancel", [
+            "chrome://browser/content/sanitize.xhtml",
+            "chrome://browser/content/sanitize.xul",
+          ]);
         },
       });
     });
@@ -220,10 +220,10 @@ add_task(async function survey_treatmentPicked() {
       await awaitTip("clear");
       await Promise.all([
         pickTip(),
-        BrowserTestUtils.promiseAlertDialog(
-          "cancel",
-          "chrome://browser/content/sanitize.xul"
-        ),
+        promiseAlertDialog("cancel", [
+          "chrome://browser/content/sanitize.xhtml",
+          "chrome://browser/content/sanitize.xul",
+        ]),
       ]);
       let tab = await tabPromise;
       Assert.equal(

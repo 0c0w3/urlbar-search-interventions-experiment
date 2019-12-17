@@ -5,7 +5,8 @@
 
 "use strict";
 
-const CUTOFF_SCORE = 1;
+const DISTANCE_THRESHOLD = 1;
+const STOP_WORDS = ["stop"];
 
 let documents = {
   fruits: "apple pear banana orange pomegranate",
@@ -40,10 +41,30 @@ let tests = [
   },
   {
     query: "banana app",
-    matches: [],
+    matches: ["fruits"],
   },
   {
     query: "banana ap",
+    matches: ["fruits"],
+  },
+  {
+    query: "banana a",
+    matches: ["fruits"],
+  },
+  {
+    query: "banana aple",
+    matches: ["fruits"],
+  },
+  {
+    query: "banana apl",
+    matches: ["fruits"],
+  },
+  {
+    query: "banana al",
+    matches: ["fruits"],
+  },
+  {
+    query: "banana all",
     matches: [],
   },
 
@@ -73,10 +94,18 @@ let tests = [
   },
   {
     query: "vanilla butterscot",
-    matches: [],
+    matches: ["iceCreams"],
   },
   {
     query: "vanilla buttersco",
+    matches: ["iceCreams"],
+  },
+  {
+    query: "vanilla butersco",
+    matches: ["iceCreams"],
+  },
+  {
+    query: "vanilla buersco",
     matches: [],
   },
 
@@ -106,16 +135,65 @@ let tests = [
   },
   {
     query: "aardvark hamst",
-    matches: [],
+    matches: ["animals"],
   },
   {
     query: "aardvark hams",
+    matches: ["animals"],
+  },
+  {
+    query: "aardvark has",
+    matches: ["animals"],
+  },
+  {
+    query: "aardvark hass",
+    matches: ["animals"],
+  },
+  {
+    query: "aardvark hasss",
     matches: [],
   },
 
   {
     query: "banana aardvark",
     matches: [],
+  },
+
+  {
+    query: "banana stop",
+    matches: ["fruits"],
+  },
+  {
+    query: "banana sto",
+    matches: ["fruits"],
+  },
+  {
+    query: "banana st",
+    matches: ["fruits"],
+  },
+  {
+    query: "banana s",
+    matches: ["fruits"],
+  },
+  {
+    query: "banana stop apple",
+    matches: ["fruits"],
+  },
+  {
+    query: "stop b",
+    matches: ["fruits", "iceCreams", "animals"],
+  },
+  {
+    query: "stop ban",
+    matches: ["fruits", "iceCreams", "animals"],
+  },
+  {
+    query: "stop bana",
+    matches: ["fruits"],
+  },
+  {
+    query: "stop banana",
+    matches: ["fruits"],
   },
 ];
 
@@ -128,7 +206,10 @@ add_task(async function test() {
     let fileURI = addon.getResourceURI("QueryScorer.js");
     Services.scriptloader.loadSubScript(fileURI.spec);
 
-    let qs = new QueryScorer();
+    let qs = new QueryScorer({
+      distanceThreshold: DISTANCE_THRESHOLD,
+      stopWords: STOP_WORDS,
+    });
 
     for (let [id, words] of Object.entries(documents)) {
       qs.addDocument({ id, words: words.split(/\s+/) });
@@ -138,7 +219,7 @@ add_task(async function test() {
       info(`Checking query: ${query}`);
       let actual = qs
         .score(query)
-        .filter(result => result.score <= CUTOFF_SCORE)
+        .filter(result => result.score <= DISTANCE_THRESHOLD)
         .map(result => result.document.id);
       Assert.deepEqual(actual, matches);
     }

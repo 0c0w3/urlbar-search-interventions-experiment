@@ -41,16 +41,12 @@ const KEYWORDS = {
     "2019",
     "browser",
     "download",
-    "fire",
-    "firefox",
-    "fox",
     "free",
     "get",
     "install",
     "installer",
     "latest",
     "mac",
-    "mozilla",
     "new",
     "newest",
     "quantum",
@@ -66,7 +62,6 @@ const KEYWORDS = {
     "cookie",
     "cookies",
     "delete",
-    "firefox",
     "history",
     "load",
     "loading",
@@ -78,7 +73,6 @@ const KEYWORDS = {
     "crash",
     "crashes",
     "crashing",
-    "firefox",
     "keep",
     "keeps",
     "not",
@@ -94,6 +88,10 @@ const KEYWORDS = {
     "works",
   ],
 };
+
+// Words that are ignored in query strings.  Put another way, the user can type
+// these and not affect query matching one way or the other.
+const STOP_WORDS = ["firefox", "mozilla"];
 
 // Our browser.urlbar provider name.
 const URLBAR_PROVIDER_NAME = "interventions";
@@ -115,7 +113,7 @@ let studyBranch;
 let currentTip = TIPS.NONE;
 
 // Object used to match the user's queries to tips.
-let queryScorer = new QueryScorer();
+let queryScorer = new QueryScorer({ stopWords: STOP_WORDS });
 
 // Tips shown in the current engagement (TIPS values).
 let tipsShownInCurrentEngagement = new Set();
