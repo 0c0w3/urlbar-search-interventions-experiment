@@ -61,6 +61,8 @@ const TELEMETRY_PICKED = `${TELEMETRY_ROOT}.${TELEMETRY_PICKED_PART}`;
 
 const SURVEY_URL = "https://qsurvey.mozilla.com/s3/Search-Interventions";
 
+const MAX_SURVEY_OPEN_COUNT = 3;
+
 const FORCE_SURVEY_ENABLE = 1;
 const FORCE_SURVEY_DISABLE = 2;
 
@@ -650,17 +652,21 @@ async function getExtensionStorage() {
 }
 
 /**
- * Sets the `forceSurvey` value in the extension's local storage.
+ * Forces the survey to open or not open (subject to the opened-count logic).
+ * Also sets a dummy survey URL.
  *
- * @return {number} value
- *   The value to set:
- *   * 0 (or undefined): Don't force either way
- *   * 1: Force the survey to open
- *   * 2: Force the survey not to open
+ * @param {number} value
+ *   FORCE_SURVEY_ENABLE or FORCE_SURVEY_DISABLE.
  */
 async function forceSurvey(value) {
   let conn = await getExtensionStorage();
-  await conn.set({ surveyURL: "http://example.com/", forceSurvey: value });
+  let storage = { surveyURL: "http://example.com/" };
+  storage.forceSurvey = value == FORCE_SURVEY_ENABLE;
+  if (value == FORCE_SURVEY_DISABLE) {
+    // Need to set this to disable.
+    storage.surveyOpenedCount = MAX_SURVEY_OPEN_COUNT;
+  }
+  await conn.set(storage);
 }
 
 /**

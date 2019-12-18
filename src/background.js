@@ -121,6 +121,10 @@ const TELEMETRY_PICKED = `${TELEMETRY_ROOT}.${TELEMETRY_PICKED_PART}`;
 // We open this survey web page in certain cases.
 const SURVEY_URL = "https://qsurvey.mozilla.com/s3/Search-Interventions";
 
+// We open the survey web page a maximum of this number of times across all
+// browser sessions.
+const MAX_SURVEY_OPEN_COUNT = 3;
+
 // The current study branch.
 let studyBranch;
 
@@ -147,7 +151,7 @@ let tipsShownInCurrentEngagement = new Set();
 let tipPicked = false;
 
 // True when we've opened the survey during a browser session.
-let openedSurvey = false;
+let openedSurveyInCurrentSession = false;
 
 /**
  * browser.urlbar.onBehaviorRequested listener.
@@ -371,33 +375,35 @@ function onResultPicked(payload) {
  *   On the control branch, the action should always be "ignored".
  */
 async function maybeOpenSurvey(tips, action) {
-  if (openedSurvey) {
-    // Don't open the survey more than once per session.
+  // Don't open the survey more than once per session.
+  if (openedSurveyInCurrentSession) {
     return;
   }
 
-  // Determine whether we should open the survey.  Tests and QA can set
-  // storage.forceSurvey to an integer value to bypass the randomness logic.
-  // Possible values:
-  //
-  // * 0 (or undefined): Don't force either way
-  // * 1: Force it to open
-  // * 2: Force it not to open
-
+  // Get the number of times we've opened the survey over all sessions.  If it's
+  // the max, don't open it again.
   let storage = await browser.storage.local.get(null);
-  if (storage && storage.forceSurvey == 2) {
-    // Don't open it.
+  if (
+    storage &&
+    typeof storage.surveyOpenedCount == "number" &&
+    storage.surveyOpenedCount >= MAX_SURVEY_OPEN_COUNT
+  ) {
     return;
   }
 
-  if (action != "picked" && Math.random() > 0.02) {
-    if (!storage || !storage.forceSurvey) {
-      // Don't open it.
-      return;
-    }
+  // Aside from the opened-count logic, if the user picked a tip, we always open
+  // the survey.  If they ignored the tip or they're on control, we open the
+  // survey only 2% of the time, but tests and QA can force it to open by
+  // setting storage.forceSurvey.
+  if (
+    action != "picked" &&
+    Math.random() > 0.02 &&
+    (!storage || !storage.forceSurvey)
+  ) {
+    return;
   }
 
-  // Open it.
+  // Open the survey.
   let spec = (storage && storage.surveyURL) || SURVEY_URL;
   let url = new URL(spec);
   url.searchParams.set("b", studyBranch);
@@ -406,7 +412,17 @@ async function maybeOpenSurvey(tips, action) {
     url.searchParams.append("tip", tip);
   }
   await browser.tabs.create({ url: url.toString(), active: false });
-  openedSurvey = true;
+
+  // Update the opened count.
+  openedSurveyInCurrentSession = true;
+  if (!storage) {
+    storage = {};
+  }
+  if (typeof storage.surveyOpenedCount != "number") {
+    storage.surveyOpenedCount = 0;
+  }
+  storage.surveyOpenedCount++;
+  await browser.storage.local.set(storage);
 }
 
 /**
