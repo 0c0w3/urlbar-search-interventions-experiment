@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Urlbar Interventions",
-  "version": "1.0a2",
+  "version": "1.0a3",
   "description": "Shows relevant tips in the urlbar view when you type certain search terms.",
   "applications": {
     "gecko": {

@@ -25,7 +25,7 @@ const { WebExtensionPolicy } = Cu.getGlobalForObject(
 );
 
 // The path of the add-on file relative to `getTestFilePath`.
-const ADDON_PATH = "urlbar_interventions-1.0a1.zip";
+const ADDON_PATH = "urlbar_interventions-1.0a3.zip";
 
 // Use SIGNEDSTATE_MISSING when testing an unsigned, in-development version of
 // the add-on and SIGNEDSTATE_PRIVILEGED when testing the production add-on.
@@ -45,6 +45,12 @@ const TIPS = {
   UPDATE_ASK: "update_ask",
   UPDATE_REFRESH: "update_refresh",
   UPDATE_WEB: "update_web",
+};
+
+const SEARCH_STRINGS = {
+  CLEAR: "firefox history",
+  REFRESH: "firefox slow",
+  UPDATE: "firefox update",
 };
 
 const TELEMETRY_ROOT = "urlbarInterventionsExperiment";
@@ -655,4 +661,38 @@ async function getExtensionStorage() {
 async function forceSurvey(value) {
   let conn = await getExtensionStorage();
   await conn.set({ surveyURL: "http://example.com/", forceSurvey: value });
+}
+
+/**
+ * Copied from BrowserTestUtils.jsm, but lets you listen for any one of multiple
+ * dialog URIs instead of only one.
+ */
+async function promiseAlertDialogOpen(buttonAction, uris, func) {
+  let win = await BrowserTestUtils.domWindowOpened(null, async win => {
+    // The test listens for the "load" event which guarantees that the alert
+    // class has already been added (it is added when "DOMContentLoaded" is
+    // fired).
+    await BrowserTestUtils.waitForEvent(win, "load");
+
+    return uris.includes(win.document.documentURI);
+  });
+
+  if (func) {
+    await func(win);
+    return win;
+  }
+
+  let dialog = win.document.querySelector("dialog");
+  dialog.getButton(buttonAction).click();
+
+  return win;
+}
+
+/**
+ * Copied from BrowserTestUtils.jsm, but lets you listen for any one of multiple
+ * dialog URIs instead of only one.
+ */
+async function promiseAlertDialog(buttonAction, uris, func) {
+  let win = await promiseAlertDialogOpen(buttonAction, uris, func);
+  return BrowserTestUtils.windowClosed(win);
 }

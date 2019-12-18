@@ -59,7 +59,7 @@ add_task(async function test() {
       // Pick the tip and continue with the mock update, which should attempt to
       // restart the browser.
       await doTreatmentTest({
-        searchString: "update",
+        searchString: SEARCH_STRINGS.UPDATE,
         tip: TIPS.UPDATE_ASK,
         title: "A new version of Firefox is available.",
         button: "Install and Restart to Update",

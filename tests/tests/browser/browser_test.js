@@ -15,16 +15,16 @@ add_task(async function refresh_treatment() {
       // Pick the tip, which should open the refresh dialog.  Click its cancel
       // button.
       await doTreatmentTest({
-        searchString: "refresh",
+        searchString: SEARCH_STRINGS.REFRESH,
         tip: TIPS.REFRESH,
         title:
           "Restore default settings and remove old add-ons for optimal performance.",
         button: "Refresh Firefox…",
         awaitCallback() {
-          return BrowserTestUtils.promiseAlertDialog(
-            "cancel",
-            "chrome://global/content/resetProfile.xul"
-          );
+          return promiseAlertDialog("cancel", [
+            "chrome://global/content/resetProfile.xhtml",
+            "chrome://global/content/resetProfile.xul",
+          ]);
         },
       });
     });
@@ -36,7 +36,7 @@ add_task(async function refresh_control() {
   await withStudy({ branch: BRANCHES.CONTROL }, async () => {
     await withAddon(async () => {
       await doControlTest({
-        searchString: "refresh",
+        searchString: SEARCH_STRINGS.REFRESH,
         tip: TIPS.REFRESH,
       });
     });
@@ -50,15 +50,15 @@ add_task(async function clear_treatment() {
       // Pick the tip, which should open the refresh dialog.  Click its cancel
       // button.
       await doTreatmentTest({
-        searchString: "clear",
+        searchString: SEARCH_STRINGS.CLEAR,
         tip: TIPS.CLEAR,
         title: "Clear Firefox’s cache, cookies, history and more.",
         button: "Choose What to Clear…",
         awaitCallback() {
-          return BrowserTestUtils.promiseAlertDialog(
-            "cancel",
-            "chrome://browser/content/sanitize.xul"
-          );
+          return promiseAlertDialog("cancel", [
+            "chrome://browser/content/sanitize.xhtml",
+            "chrome://browser/content/sanitize.xul",
+          ]);
         },
       });
     });
@@ -70,7 +70,7 @@ add_task(async function clear_control() {
   await withStudy({ branch: BRANCHES.CONTROL }, async () => {
     await withAddon(async () => {
       await doControlTest({
-        searchString: "clear",
+        searchString: SEARCH_STRINGS.CLEAR,
         tip: TIPS.CLEAR,
       });
     });
@@ -94,14 +94,14 @@ add_task(async function clear_treatment_private() {
 
       // First, make sure the extension works in PBM by triggering a non-clear
       // tip.
-      let result = (await awaitTip("refresh", win))[0];
+      let result = (await awaitTip(SEARCH_STRINGS.REFRESH, win))[0];
       Assert.strictEqual(result.payload.type, TIPS.REFRESH);
 
       // Blur the urlbar so that the engagement is ended.
       await UrlbarTestUtils.promisePopupClose(win, () => win.gURLBar.blur());
 
       // Now do a search that would trigger the clear tip.
-      await awaitNoTip("clear", win);
+      await awaitNoTip(SEARCH_STRINGS.CLEAR, win);
 
       // Blur the urlbar so that the engagement is ended.
       await UrlbarTestUtils.promisePopupClose(win, () => win.gURLBar.blur());
@@ -217,13 +217,13 @@ add_task(async function survey_treatmentPicked() {
     await withAddon(async () => {
       await forceSurvey(FORCE_SURVEY_ENABLE);
       let tabPromise = BrowserTestUtils.waitForNewTab(gBrowser);
-      await awaitTip("clear");
+      await awaitTip(SEARCH_STRINGS.CLEAR);
       await Promise.all([
         pickTip(),
-        BrowserTestUtils.promiseAlertDialog(
-          "cancel",
-          "chrome://browser/content/sanitize.xul"
-        ),
+        promiseAlertDialog("cancel", [
+          "chrome://browser/content/sanitize.xhtml",
+          "chrome://browser/content/sanitize.xul",
+        ]),
       ]);
       let tab = await tabPromise;
       Assert.equal(
@@ -241,7 +241,7 @@ add_task(async function survey_treatmentIgnored() {
     await withAddon(async () => {
       await forceSurvey(FORCE_SURVEY_ENABLE);
       let tabPromise = BrowserTestUtils.waitForNewTab(gBrowser);
-      await awaitTip("clear");
+      await awaitTip(SEARCH_STRINGS.CLEAR);
       await UrlbarTestUtils.promisePopupClose(window, () => gURLBar.blur());
       let tab = await tabPromise;
       Assert.equal(
@@ -259,7 +259,7 @@ add_task(async function survey_control() {
     await withAddon(async () => {
       await forceSurvey(FORCE_SURVEY_ENABLE);
       let tabPromise = BrowserTestUtils.waitForNewTab(gBrowser);
-      await awaitNoTip("clear");
+      await awaitNoTip(SEARCH_STRINGS.CLEAR);
       await UrlbarTestUtils.promisePopupClose(window, () => gURLBar.blur());
       let tab = await tabPromise;
       Assert.equal(
@@ -277,7 +277,7 @@ add_task(async function survey_twice() {
     await withAddon(async () => {
       await forceSurvey(FORCE_SURVEY_ENABLE);
       let tabPromise = BrowserTestUtils.waitForNewTab(gBrowser);
-      await awaitTip("clear");
+      await awaitTip(SEARCH_STRINGS.CLEAR);
       await UrlbarTestUtils.promisePopupClose(window, () => gURLBar.blur());
       let tab = await tabPromise;
       Assert.equal(
@@ -288,7 +288,7 @@ add_task(async function survey_twice() {
 
       let count = gBrowser.tabs.length;
       Assert.equal(typeof count, "number", "Sanity check");
-      await awaitTip("clear");
+      await awaitTip(SEARCH_STRINGS.CLEAR);
       await UrlbarTestUtils.promisePopupClose(window, () => gURLBar.blur());
       // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
       await new Promise(r => setTimeout(r, 1000));
@@ -304,7 +304,7 @@ add_task(async function unenrollAfterInstall() {
         awaitAddonMessage("unenrolled"),
         AddonStudies.markAsEnded(study),
       ]);
-      await awaitNoTip("refresh");
+      await awaitNoTip(SEARCH_STRINGS.REFRESH);
     });
   });
 });
@@ -313,7 +313,7 @@ add_task(async function unenrollBeforeInstall() {
   await withStudy({ branch: BRANCHES.TREATMENT }, async study => {
     await AddonStudies.markAsEnded(study);
     await withAddon(async () => {
-      await awaitNoTip("refresh");
+      await awaitNoTip(SEARCH_STRINGS.REFRESH);
     });
   });
 });
@@ -321,7 +321,7 @@ add_task(async function unenrollBeforeInstall() {
 add_task(async function noBranch() {
   await withStudy({}, async () => {
     await withAddon(async () => {
-      await awaitNoTip("refresh");
+      await awaitNoTip(SEARCH_STRINGS.REFRESH);
     });
   });
 });
@@ -329,7 +329,7 @@ add_task(async function noBranch() {
 add_task(async function unrecognizedBranch() {
   await withStudy({ branch: "bogus" }, async () => {
     await withAddon(async () => {
-      await awaitNoTip("refresh");
+      await awaitNoTip(SEARCH_STRINGS.REFRESH);
     });
   });
 });

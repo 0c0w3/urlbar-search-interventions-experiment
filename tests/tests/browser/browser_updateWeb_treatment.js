@@ -33,7 +33,7 @@ add_task(async function test() {
 
       // Picking the tip should open the download page in a new tab.
       let downloadTab = await doTreatmentTest({
-        searchString: "update",
+        searchString: SEARCH_STRINGS.UPDATE,
         tip: TIPS.UPDATE_WEB,
         title: "Get the latest Firefox browser.",
         button: "Download Now",

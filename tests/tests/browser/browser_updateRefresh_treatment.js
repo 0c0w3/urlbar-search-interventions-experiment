@@ -35,16 +35,16 @@ add_task(async function test() {
       // Picking the tip should open the refresh dialog.  Click its cancel
       // button.
       await doTreatmentTest({
-        searchString: "update",
+        searchString: SEARCH_STRINGS.UPDATE,
         tip: TIPS.UPDATE_REFRESH,
         title:
           "Firefox is up to date. Trying to fix a problem? Restore default settings and remove old add-ons for optimal performance.",
         button: "Refresh Firefox…",
         awaitCallback() {
-          return BrowserTestUtils.promiseAlertDialog(
-            "cancel",
-            "chrome://global/content/resetProfile.xul"
-          );
+          return promiseAlertDialog("cancel", [
+            "chrome://global/content/resetProfile.xhtml",
+            "chrome://global/content/resetProfile.xul",
+          ]);
         },
       });
     });

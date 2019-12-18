@@ -5,117 +5,382 @@
 
 "use strict";
 
-const CUTOFF_SCORE = 1;
+const DISTANCE_THRESHOLD = 1;
 
-let documents = {
-  fruits: "apple pear banana orange pomegranate",
-  iceCreams: "chocolate vanilla butterscotch",
-  animals: "aardvark badger hamster elephant",
+const DOCUMENTS = {
+  clear: [
+    "cache firefox",
+    "clear cache firefox",
+    "clear cache in firefox",
+    "clear cookies firefox",
+    "clear firefox cache",
+    "clear history firefox",
+    "cookies firefox",
+    "delete cookies firefox",
+    "delete history firefox",
+    "firefox cache",
+    "firefox clear cache",
+    "firefox clear cookies",
+    "firefox clear history",
+    "firefox cookie",
+    "firefox cookies",
+    "firefox delete cookies",
+    "firefox delete history",
+    "firefox history",
+    "firefox not loading pages",
+    "history firefox",
+    "how to clear cache",
+    "how to clear history",
+  ],
+  refresh: [
+    "firefox crashing",
+    "firefox keeps crashing",
+    "firefox not responding",
+    "firefox not working",
+    "firefox refresh",
+    "firefox slow",
+    "how to reset firefox",
+    "refresh firefox",
+    "reset firefox",
+  ],
+  update: [
+    "download firefox",
+    "download mozilla",
+    "firefox browser",
+    "firefox download",
+    "firefox for mac",
+    "firefox for windows",
+    "firefox free download",
+    "firefox install",
+    "firefox installer",
+    "firefox latest version",
+    "firefox mac",
+    "firefox quantum",
+    "firefox update",
+    "firefox version",
+    "firefox windows",
+    "get firefox",
+    "how to update firefox",
+    "install firefox",
+    "mozilla download",
+    "mozilla firefox 2019",
+    "mozilla firefox 2020",
+    "mozilla firefox download",
+    "mozilla firefox for mac",
+    "mozilla firefox for windows",
+    "mozilla firefox free download",
+    "mozilla firefox mac",
+    "mozilla firefox update",
+    "mozilla firefox windows",
+    "mozilla update",
+    "update firefox",
+    "update mozilla",
+    "www.firefox.com",
+  ],
 };
+
+const VARIATIONS = new Map([["firefox", ["fire fox", "fox fire", "foxfire"]]]);
 
 let tests = [
   {
-    query: "banana",
-    matches: ["fruits"],
+    query: "firefox",
+    matches: [
+      { id: "clear", score: Infinity },
+      { id: "refresh", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
   },
   {
-    query: "banan",
-    matches: ["fruits"],
+    query: "bogus",
+    matches: [
+      { id: "clear", score: Infinity },
+      { id: "refresh", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
   },
   {
-    query: "bana",
-    matches: [],
+    query: "no match",
+    matches: [
+      { id: "clear", score: Infinity },
+      { id: "refresh", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
+  },
+
+  // clear
+  {
+    query: "firefox histo",
+    matches: [
+      { id: "clear", score: Infinity },
+      { id: "refresh", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
   },
   {
-    query: "banna",
-    matches: ["fruits"],
+    query: "firefox histor",
+    matches: [
+      { id: "clear", score: 1 },
+      { id: "refresh", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
   },
   {
-    query: "banana apple",
-    matches: ["fruits"],
+    query: "firefox history",
+    matches: [
+      { id: "clear", score: 0 },
+      { id: "refresh", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
   },
   {
-    query: "banana appl",
-    matches: ["fruits"],
-  },
-  {
-    query: "banana app",
-    matches: [],
-  },
-  {
-    query: "banana ap",
-    matches: [],
+    query: "firefox history we'll keep matching once we match",
+    matches: [
+      { id: "clear", score: 0 },
+      { id: "refresh", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
   },
 
   {
-    query: "vanilla",
-    matches: ["iceCreams"],
+    query: "firef history",
+    matches: [
+      { id: "clear", score: Infinity },
+      { id: "refresh", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
   },
   {
-    query: "vanill",
-    matches: ["iceCreams"],
+    query: "firefo history",
+    matches: [
+      { id: "clear", score: 1 },
+      { id: "refresh", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
   },
   {
-    query: "vanil",
-    matches: [],
+    query: "firefo histor",
+    matches: [
+      { id: "clear", score: 2 },
+      { id: "refresh", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
   },
   {
-    query: "vanila",
-    matches: ["iceCreams"],
-  },
-  {
-    query: "vanilla butterscotch",
-    matches: ["iceCreams"],
-  },
-  {
-    query: "vanilla butterscotc",
-    matches: ["iceCreams"],
-  },
-  {
-    query: "vanilla butterscot",
-    matches: [],
-  },
-  {
-    query: "vanilla buttersco",
-    matches: [],
-  },
-
-  {
-    query: "aardvark",
-    matches: ["animals"],
-  },
-  {
-    query: "aardvar",
-    matches: ["animals"],
-  },
-  {
-    query: "aardva",
-    matches: [],
-  },
-  {
-    query: "ardvark",
-    matches: ["animals"],
-  },
-  {
-    query: "aardvark hamster",
-    matches: ["animals"],
-  },
-  {
-    query: "aardvark hamste",
-    matches: ["animals"],
-  },
-  {
-    query: "aardvark hamst",
-    matches: [],
-  },
-  {
-    query: "aardvark hams",
-    matches: [],
+    query: "firefo histor we'll keep matching once we match",
+    matches: [
+      { id: "clear", score: 2 },
+      { id: "refresh", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
   },
 
   {
-    query: "banana aardvark",
-    matches: [],
+    query: "fire fox history",
+    matches: [
+      { id: "clear", score: 0 },
+      { id: "refresh", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
+  },
+  {
+    query: "fox fire history",
+    matches: [
+      { id: "clear", score: 0 },
+      { id: "refresh", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
+  },
+  {
+    query: "foxfire history",
+    matches: [
+      { id: "clear", score: 0 },
+      { id: "refresh", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
+  },
+
+  // refresh
+  {
+    query: "firefox sl",
+    matches: [
+      { id: "clear", score: Infinity },
+      { id: "refresh", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
+  },
+  {
+    query: "firefox slo",
+    matches: [
+      { id: "refresh", score: 1 },
+      { id: "clear", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
+  },
+  {
+    query: "firefox slow",
+    matches: [
+      { id: "refresh", score: 0 },
+      { id: "clear", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
+  },
+  {
+    query: "firefox slow we'll keep matching once we match",
+    matches: [
+      { id: "refresh", score: 0 },
+      { id: "clear", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
+  },
+
+  {
+    query: "firef slow",
+    matches: [
+      { id: "clear", score: Infinity },
+      { id: "refresh", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
+  },
+  {
+    query: "firefo slow",
+    matches: [
+      { id: "refresh", score: 1 },
+      { id: "clear", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
+  },
+  {
+    query: "firefo slo",
+    matches: [
+      { id: "refresh", score: 2 },
+      { id: "clear", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
+  },
+  {
+    query: "firefo slo we'll keep matching once we match",
+    matches: [
+      { id: "refresh", score: 2 },
+      { id: "clear", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
+  },
+
+  {
+    query: "fire fox slow",
+    matches: [
+      { id: "refresh", score: 0 },
+      { id: "clear", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
+  },
+  {
+    query: "fox fire slow",
+    matches: [
+      { id: "refresh", score: 0 },
+      { id: "clear", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
+  },
+  {
+    query: "foxfire slow",
+    matches: [
+      { id: "refresh", score: 0 },
+      { id: "clear", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
+  },
+
+  // update
+  {
+    query: "firefox upda",
+    matches: [
+      { id: "clear", score: Infinity },
+      { id: "refresh", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
+  },
+  {
+    query: "firefox updat",
+    matches: [
+      { id: "update", score: 1 },
+      { id: "clear", score: Infinity },
+      { id: "refresh", score: Infinity },
+    ],
+  },
+  {
+    query: "firefox update",
+    matches: [
+      { id: "update", score: 0 },
+      { id: "clear", score: Infinity },
+      { id: "refresh", score: Infinity },
+    ],
+  },
+  {
+    query: "firefox update we'll keep matching once we match",
+    matches: [
+      { id: "update", score: 0 },
+      { id: "clear", score: Infinity },
+      { id: "refresh", score: Infinity },
+    ],
+  },
+
+  {
+    query: "firef update",
+    matches: [
+      { id: "clear", score: Infinity },
+      { id: "refresh", score: Infinity },
+      { id: "update", score: Infinity },
+    ],
+  },
+  {
+    query: "firefo update",
+    matches: [
+      { id: "update", score: 1 },
+      { id: "clear", score: Infinity },
+      { id: "refresh", score: Infinity },
+    ],
+  },
+  {
+    query: "firefo updat",
+    matches: [
+      { id: "update", score: 2 },
+      { id: "clear", score: Infinity },
+      { id: "refresh", score: Infinity },
+    ],
+  },
+  {
+    query: "firefo updat we'll keep matching once we match",
+    matches: [
+      { id: "update", score: 2 },
+      { id: "clear", score: Infinity },
+      { id: "refresh", score: Infinity },
+    ],
+  },
+
+  {
+    query: "fire fox update",
+    matches: [
+      { id: "update", score: 0 },
+      { id: "clear", score: Infinity },
+      { id: "refresh", score: Infinity },
+    ],
+  },
+  {
+    query: "fox fire update",
+    matches: [
+      { id: "update", score: 0 },
+      { id: "clear", score: Infinity },
+      { id: "refresh", score: Infinity },
+    ],
+  },
+  {
+    query: "foxfire update",
+    matches: [
+      { id: "update", score: 0 },
+      { id: "clear", score: Infinity },
+      { id: "refresh", score: Infinity },
+    ],
   },
 ];
 
@@ -128,19 +393,20 @@ add_task(async function test() {
     let fileURI = addon.getResourceURI("QueryScorer.js");
     Services.scriptloader.loadSubScript(fileURI.spec);
 
-    let qs = new QueryScorer();
+    let qs = new QueryScorer({
+      distanceThreshold: DISTANCE_THRESHOLD,
+      variations: VARIATIONS,
+    });
 
-    for (let [id, words] of Object.entries(documents)) {
-      qs.addDocument({ id, words: words.split(/\s+/) });
+    for (let [id, phrases] of Object.entries(DOCUMENTS)) {
+      qs.addDocument({ id, phrases });
     }
 
     for (let { query, matches } of tests) {
-      info(`Checking query: ${query}`);
       let actual = qs
         .score(query)
-        .filter(result => result.score <= CUTOFF_SCORE)
-        .map(result => result.document.id);
-      Assert.deepEqual(actual, matches);
+        .map(result => ({ id: result.document.id, score: result.score }));
+      Assert.deepEqual(actual, matches, `Query: "${query}"`);
     }
   });
 });

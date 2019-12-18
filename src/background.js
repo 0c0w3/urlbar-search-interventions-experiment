@@ -35,63 +35,76 @@ const TIPS = {
   UPDATE_WEB: "update_web",
 };
 
-// Keywords for each tip type.
-const KEYWORDS = {
-  update: [
-    "2019",
-    "browser",
-    "download",
-    "fire",
-    "firefox",
-    "fox",
-    "free",
-    "get",
-    "install",
-    "installer",
-    "latest",
-    "mac",
-    "mozilla",
-    "new",
-    "newest",
-    "quantum",
-    "update",
-    "updates",
-    "version",
-    "windows",
-    "www.firefox.com",
-  ],
+// The search "documents" corresponding to each tip type.
+const DOCUMENTS = {
   clear: [
-    "cache",
-    "clear",
-    "cookie",
-    "cookies",
-    "delete",
-    "firefox",
-    "history",
-    "load",
-    "loading",
-    "loads",
-    "location",
-    "page",
+    "cache firefox",
+    "clear cache firefox",
+    "clear cache in firefox",
+    "clear cookies firefox",
+    "clear firefox cache",
+    "clear history firefox",
+    "cookies firefox",
+    "delete cookies firefox",
+    "delete history firefox",
+    "firefox cache",
+    "firefox clear cache",
+    "firefox clear cookies",
+    "firefox clear history",
+    "firefox cookie",
+    "firefox cookies",
+    "firefox delete cookies",
+    "firefox delete history",
+    "firefox history",
+    "firefox not loading pages",
+    "history firefox",
+    "how to clear cache",
+    "how to clear history",
   ],
   refresh: [
-    "crash",
-    "crashes",
-    "crashing",
-    "firefox",
-    "keep",
-    "keeps",
-    "not",
-    "refresh",
-    "reset",
-    "respond",
-    "responding",
-    "responds",
-    "slow",
-    "slows",
-    "work",
-    "working",
-    "works",
+    "firefox crashing",
+    "firefox keeps crashing",
+    "firefox not responding",
+    "firefox not working",
+    "firefox refresh",
+    "firefox slow",
+    "how to reset firefox",
+    "refresh firefox",
+    "reset firefox",
+  ],
+  update: [
+    "download firefox",
+    "download mozilla",
+    "firefox browser",
+    "firefox download",
+    "firefox for mac",
+    "firefox for windows",
+    "firefox free download",
+    "firefox install",
+    "firefox installer",
+    "firefox latest version",
+    "firefox mac",
+    "firefox quantum",
+    "firefox update",
+    "firefox version",
+    "firefox windows",
+    "get firefox",
+    "how to update firefox",
+    "install firefox",
+    "mozilla download",
+    "mozilla firefox 2019",
+    "mozilla firefox 2020",
+    "mozilla firefox download",
+    "mozilla firefox for mac",
+    "mozilla firefox for windows",
+    "mozilla firefox free download",
+    "mozilla firefox mac",
+    "mozilla firefox update",
+    "mozilla firefox windows",
+    "mozilla update",
+    "update firefox",
+    "update mozilla",
+    "www.firefox.com",
   ],
 };
 
@@ -115,7 +128,12 @@ let studyBranch;
 let currentTip = TIPS.NONE;
 
 // Object used to match the user's queries to tips.
-let queryScorer = new QueryScorer();
+let queryScorer = new QueryScorer({
+  variations: new Map([
+    // Recognize "fire fox", "fox fire", and "foxfire" as "firefox".
+    ["firefox", ["fire fox", "fox fire", "foxfire"]],
+  ]),
+});
 
 // Tips shown in the current engagement (TIPS values).
 let tipsShownInCurrentEngagement = new Set();
@@ -475,8 +493,8 @@ async function enroll() {
   });
 
   // Initialize the query scorer.
-  for (let docID in KEYWORDS) {
-    queryScorer.addDocument({ id: docID, words: KEYWORDS[docID] });
+  for (let [id, phrases] of Object.entries(DOCUMENTS)) {
+    queryScorer.addDocument({ id, phrases });
   }
 
   // Trigger a browser update check.  (This won't actually check if updates are

@@ -38,7 +38,7 @@ add_task(async function test() {
       await processUpdateSteps(preSteps);
 
       await doControlTest({
-        searchString: "update",
+        searchString: SEARCH_STRINGS.UPDATE,
         tip: TIPS.UPDATE_RESTART,
       });
     });

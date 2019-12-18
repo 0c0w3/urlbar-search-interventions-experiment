@@ -5,43 +5,49 @@
 "use strict";
 
 /**
- * This class scores a query string against sets of keywords.  To refer to a
- * single set of keywords, we borrow the term "document" from search engine
+ * This class scores a query string against sets of phrases.  To refer to a
+ * single set of phrases, we borrow the term "document" from search engine
  * terminology.  To use this class, first add your documents with `addDocument`,
  * and then call `score` with a query string.  `score` returns a sorted array of
  * document-score pairs.
  *
- * The scoring method is simple and is based on Levenshtein edit distance.
- * Therefore, lower scores indicate a better match than higher scores.  In
- * summary, we compute the edit distances between the query words and the words
- * in each document that best match them.  If any of these distances is larger
- * than some threshold -- defined by `distanceThreshold` -- then the document
- * does not match the query, and we assign it a score of Infinity.  The score
- * for a document is the sum of these distances.
- *
- * For example, if the query is a single word, then the distance between it and
- * a given document is the minimum distance between it and all words in the
- * document.  If the document contains the word exactly, then the distance is
- * zero.  If the query is two words, then the distance between it and the
- * document is the sum of the minimum distances between each query word and all
- * words in the document.  For details, see `score`.
+ * The scoring method is fairly simple and is based on Levenshtein edit
+ * distance.  Therefore, lower scores indicate a better match than higher
+ * scores.  In summary, a query matches a phrase if the query starts with the
+ * phrase.  So a query "firefox update foo bar" matches the phrase "firefox
+ * update" for example.  A query matches a document if it matches any phrase in
+ * the document.  The query and phrases are compared word for word, and we allow
+ * fuzzy matching by computing the Levenshtein edit distance in each comparison.
+ * The amount of fuzziness allowed is controlled with `distanceThreshold`.  If
+ * the distance in a comparison is greater than this threshold, then the phrase
+ * does not match the query.  The final score for a document is the minimum edit
+ * distance between its phrases and the query.
  *
  * As mentioned, `score` returns a sorted array of document-score pairs.  It's
  * up to you to filter the array to exclude scores above a certain threshold, or
  * to take the top scorer, etc.
  */
 class QueryScorer {
-  constructor(distanceThreshold = 1) {
+  /**
+   * @param {number} distanceThreshold
+   *   Edit distances no larger than this value are considered matches.
+   * @param {Map} variations
+   *   For convenience, the scorer can augment documents by replacing certain
+   *   words with other words and phrases. This mechanism is called variations.
+   *   This keys of this map are words that should be replaced, and the values
+   *   are the replacement words or phrases.  For example, if you add a document
+   *   whose only phrase is "firefox update", normally the scorer will register
+   *   only this single phrase for the document.  However, if you pass the value
+   *   `new Map(["firefox", ["fire fox", "fox fire", "foxfire"]])` for this
+   *   parameter, it will register 4 total phrases for the document: "fire fox
+   *   update", "fox fire update", "foxfire update", and the original "firefox
+   *   update".
+   */
+  constructor({ distanceThreshold = 1, variations = new Map() } = {}) {
     this._distanceThreshold = distanceThreshold;
-    this._documentsByWord = new Map();
-  }
-
-  get distanceThreshold() {
-    return this._distanceThreshold;
-  }
-
-  set distanceThreshold(value) {
-    this._distanceThreshold = value;
+    this._variations = variations;
+    this._documents = new Set();
+    this._rootNode = new Node();
   }
 
   /**
@@ -51,15 +57,37 @@ class QueryScorer {
    *   The document.
    * @param {string} doc.id
    *   The document's ID.
-   * @param {array} doc.words
-   *   The set of words in the document.
+   * @param {array} doc.phrases
+   *   The set of phrases in the document.  Each phrase should be a string.
    */
   addDocument(doc) {
-    doc.words = doc.words.map(word => word.toLocaleLowerCase());
-    for (let word of doc.words) {
-      let docs = this._documentsByWord.get(word) || new Set();
-      docs.add(doc);
-      this._documentsByWord.set(word, docs);
+    this._documents.add(doc);
+
+    for (let phraseStr of doc.phrases) {
+      // Split the phrase and lowercase the words.
+      let phrase = phraseStr
+        .trim()
+        .split(/\s+/)
+        .map(word => word.toLocaleLowerCase());
+
+      // Build a phrase list that contains the original phrase plus its
+      // variations, if any.
+      let phrases = [phrase];
+      for (let [triggerWord, variations] of this._variations) {
+        let index = phrase.indexOf(triggerWord);
+        if (index >= 0) {
+          for (let variation of variations) {
+            let variationPhrase = Array.from(phrase);
+            variationPhrase.splice(index, 1, ...variation.split(/\s+/));
+            phrases.push(variationPhrase);
+          }
+        }
+      }
+
+      // Finally, add the phrases to the phrase tree.
+      for (let phrase of phrases) {
+        this._buildPhraseTree(this._rootNode, doc, phrase, 0);
+      }
     }
   }
 
@@ -74,47 +102,134 @@ class QueryScorer {
    *   ordered by score from low to high.  Scores represent edit distance, so
    *   lower scores are better.
    */
-  score(searchString) {
-    // For each word in the query string:
-    //
-    // 1. Get its edit distance from all words in all documents.  While we're
-    //    doing that, keep track of the word's minimum distance per document.
-    // 2. For each document, add the minimum distance computed in the previous
-    //    step to a running sum.  This sum is the document's distance score for
-    //    the query string.
-
-    let searchWords = searchString
+  score(queryString) {
+    let queryWords = queryString
       .trim()
       .split(/\s+/)
       .map(word => word.toLocaleLowerCase());
-    let sumByDoc = new Map();
-    for (let searchWord of searchWords) {
-      let minDistanceByDoc = new Map();
-      for (let [docWord, docs] of this._documentsByWord) {
-        let distance = this._levenshtein(searchWord, docWord);
-        if (distance > this.distanceThreshold) {
-          distance = Infinity;
-        }
-        for (let doc of docs) {
-          minDistanceByDoc.set(
-            doc,
-            Math.min(
-              distance,
-              minDistanceByDoc.has(doc) ? minDistanceByDoc.get(doc) : Infinity
-            )
-          );
-        }
-      }
-      for (let [doc, min] of minDistanceByDoc) {
-        sumByDoc.set(doc, min + (sumByDoc.get(doc) || 0));
-      }
-    }
+    let minDistanceByDoc = this._traverse({ queryWords });
     let results = [];
-    for (let [doc, sum] of sumByDoc) {
-      results.push({ document: doc, score: sum });
+    for (let doc of this._documents) {
+      let distance = minDistanceByDoc.get(doc);
+      results.push({
+        document: doc,
+        score: distance === undefined ? Infinity : distance,
+      });
     }
     results.sort((a, b) => a.score - b.score);
     return results;
+  }
+
+  /**
+   * Builds the phrase tree based on the current documents.
+   *
+   * The phrase tree lets us efficiently match queries against phrases.  Each
+   * path through the tree starting from the root and ending at a leaf
+   * represents a complete phrase in a document (or more than one document, if
+   * the same phrase is present in multiple documents).  Each node in the path
+   * represents a word in the phrase.  To match a query, we start at the root,
+   * and in the root we look up the query's first word.  If the word matches the
+   * first word of any phrase, then the root will have a child node representing
+   * that word, and we move on to the child node.  Then we look up the query's
+   * second word in the child node, and so on, until either a lookup fails or we
+   * reach a leaf node.
+   *
+   * @param {Node} node
+   *   The current node being visited.
+   * @param {object} doc
+   *   The document whose phrases are being added to the tree.
+   * @param {array} phrase
+   *   The phrase to add to the tree.
+   * @param {number} wordIndex
+   *   The index in the phrase of the current word.
+   */
+  _buildPhraseTree(node, doc, phrase, wordIndex) {
+    if (phrase.length == wordIndex) {
+      // We're done with this phrase.
+      return;
+    }
+
+    let word = phrase[wordIndex].toLocaleLowerCase();
+    let child = node.childrenByWord.get(word);
+    if (!child) {
+      child = new Node(word);
+      node.childrenByWord.set(word, child);
+    }
+    child.documents.add(doc);
+
+    // Recurse with the next word in the phrase.
+    this._buildPhraseTree(child, doc, phrase, wordIndex + 1);
+  }
+
+  /**
+   * Traverses a path in the phrase tree in order to score a query.  See
+   * `_buildPhraseTree` for a description of how this works.
+   *
+   * @param {array} queryWords
+   *   The query being scored, split into words.
+   * @param {Node} node
+   *   The node currently being visited.
+   * @param {Map} minDistanceByDoc
+   *   Keeps track of the minimum edit distance for each document as the
+   *   traversal continues.
+   * @param {number} queryWordsIndex
+   *   The current index in the query words array.
+   * @param {number} phraseDistance
+   *   The total edit distance between the query and the path in the tree that's
+   *   been traversed so far.
+   * @return {Map} minDistanceByDoc
+   */
+  _traverse({
+    queryWords,
+    node = this._rootNode,
+    minDistanceByDoc = new Map(),
+    queryWordsIndex = 0,
+    phraseDistance = 0,
+  } = {}) {
+    if (!node.childrenByWord.size) {
+      // We reached a leaf node.  The query has matched a phrase.  If the query
+      // and the phrase have the same number of words, then queryWordsIndex ==
+      // queryWords.length also.  Otherwise the query contains more words than
+      // the phrase.  We still count that as a match.
+      for (let doc of node.documents) {
+        minDistanceByDoc.set(
+          doc,
+          Math.min(
+            phraseDistance,
+            minDistanceByDoc.has(doc) ? minDistanceByDoc.get(doc) : Infinity
+          )
+        );
+      }
+      return minDistanceByDoc;
+    }
+
+    if (queryWordsIndex == queryWords.length) {
+      // We exhausted all the words in the query but have not reached a leaf
+      // node.  No match; the query has matched a phrase(s) up to this point,
+      // but it doesn't have enough words.
+      return minDistanceByDoc;
+    }
+
+    // Compare each word in the node to the current query word.
+    let queryWord = queryWords[queryWordsIndex];
+    for (let [childWord, child] of node.childrenByWord) {
+      let distance = this._levenshtein(queryWord, childWord);
+      if (distance <= this._distanceThreshold) {
+        // The word represented by this child node matches the current query
+        // word.  Recurse into the child node.
+        this._traverse({
+          node: child,
+          queryWords,
+          queryWordsIndex: queryWordsIndex + 1,
+          phraseDistance: phraseDistance + distance,
+          minDistanceByDoc,
+        });
+      }
+      // Else, the path that continues at the child node can't possibly match
+      // the query, so don't recurse into it.
+    }
+
+    return minDistanceByDoc;
   }
 
   /**
@@ -183,5 +298,16 @@ class QueryScorer {
     c0 = p1[l2];
 
     return c0;
+  }
+}
+
+/**
+ * A node in the scorer's phrase tree.
+ */
+class Node {
+  constructor(word) {
+    this.word = word;
+    this.documents = new Set();
+    this.childrenByWord = new Map();
   }
 }
