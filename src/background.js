@@ -132,6 +132,10 @@ let queryScorer = new QueryScorer({
   variations: new Map([
     // Recognize "fire fox", "fox fire", and "foxfire" as "firefox".
     ["firefox", ["fire fox", "fox fire", "foxfire"]],
+    // Recognize "mozila" as "mozilla".  This will catch common mispellings
+    // "mozila", "mozzila", and "mozzilla" (among others) due to the edit
+    // distance threshold of 1.
+    ["mozilla", ["mozila"]],
   ]),
 });
 
