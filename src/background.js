@@ -121,6 +121,10 @@ const TELEMETRY_PICKED = `${TELEMETRY_ROOT}.${TELEMETRY_PICKED_PART}`;
 // We open this survey web page in certain cases.
 const SURVEY_URL = "https://qsurvey.mozilla.com/s3/Search-Interventions";
 
+// We inject this content script in the survey page to listen for when the user
+// starts the survey so that we don't bug them with it anymore.
+const SURVEY_CONTENT_SCRIPT_PATH = "/content/survey.js";
+
 // We open the survey web page a maximum of this number of times across all
 // browser sessions.
 const MAX_SURVEY_OPEN_COUNT = 3;
@@ -354,6 +358,32 @@ function onResultPicked(payload) {
 }
 
 /**
+ * browser.runtime.onMessage listener.  Called when our survey content script
+ * sends a message.
+ *
+ * IMPORTANT: The WebExtensions doc says this listener should not be async.
+ * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/onMessage
+ */
+function onContentScriptMessage(message, sender, sendResponse) {
+  if (message != "submit") {
+    console.debug(`Unexpected message: ${message}`);
+    return;
+  }
+
+  // We only need to do this once, so remove the listener.
+  browser.runtime.onMessage.removeListener(onContentScriptMessage);
+
+  // Set the open count to the max.
+  browser.storage.local.get(null).then(storage => {
+    if (!storage) {
+      storage = {};
+    }
+    storage.surveyOpenedCount = MAX_SURVEY_OPEN_COUNT;
+    browser.storage.local.set(storage);
+  });
+}
+
+/**
  * We open a user survey web page in three cases:
  *
  * (1) Treatment: When the user picks a tip.
@@ -411,7 +441,7 @@ async function maybeOpenSurvey(tips, action) {
   for (let tip of tips) {
     url.searchParams.append("tip", tip);
   }
-  await browser.tabs.create({ url: url.toString(), active: false });
+  let tab = await browser.tabs.create({ url: url.toString(), active: false });
 
   // Update the opened count.
   openedSurveyInCurrentSession = true;
@@ -423,6 +453,14 @@ async function maybeOpenSurvey(tips, action) {
   }
   storage.surveyOpenedCount++;
   await browser.storage.local.set(storage);
+
+  // Inject our content script that listens for when the user starts the survey.
+  // Note that since we open the survey no more than once per session, we don't
+  // need to worry about adding our content script listener more than once.
+  await browser.runtime.onMessage.addListener(onContentScriptMessage);
+  await browser.tabs.executeScript(tab.id, {
+    file: SURVEY_CONTENT_SCRIPT_PATH,
+  });
 }
 
 /**
@@ -465,6 +503,7 @@ async function unenroll() {
   await browser.urlbar.onResultsRequested.removeListener(onResultsRequested);
   await browser.urlbar.onResultPicked.removeListener(onResultPicked);
   await browser.urlbar.onEngagement.removeListener(onEngagement);
+  await browser.runtime.onMessage.removeListener(onContentScriptMessage);
   sendTestMessage("unenrolled");
 }
 

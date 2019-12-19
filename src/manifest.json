@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Urlbar Interventions",
-  "version": "1.0a3",
+  "version": "1.0a4",
   "description": "Shows relevant tips in the urlbar view when you type certain search terms.",
   "applications": {
     "gecko": {
@@ -16,6 +16,7 @@
     }
   },
   "permissions": [
+    "https://qsurvey.mozilla.com/s3/Search-Interventions",
     "normandyAddonStudy",
     "storage",
     "telemetry",
