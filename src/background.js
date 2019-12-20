@@ -308,14 +308,15 @@ function onResultPicked(payload) {
   // restart due to the user's picking the tip, we open the survey now (below).
   // If the browser will restart, we open the survey after restart (in enroll).
 
-  // Determine whether the browser will restart.  For REFRESH and UPDATE_REFRESH
-  // we show the profile-reset dialog, which the user can cancel, but for our
-  // purposes we assume the browser will restart.
+  // Determine whether the browser will restart.  REFRESH and UPDATE_REFRESH are
+  // special cases.  We'll show the reset-profile dialog.  If the user cancels
+  // it, nothing happens.  If they accept it, then the browser will restart and
+  // all add-ons will be uninstalled, including this one.  So the only way they
+  // would see a survey is if they cancel.  Therefore we open the survey now for
+  // those tips.
   let willRestart = false;
   switch (tip) {
-    case TIPS.REFRESH:
     case TIPS.UPDATE_ASK:
-    case TIPS.UPDATE_REFRESH:
     case TIPS.UPDATE_RESTART:
       willRestart = true;
       break;
@@ -323,7 +324,7 @@ function onResultPicked(payload) {
 
   // If we're restarting, save the picked tip type in storage.
   if (willRestart) {
-    browser.storage.local.set({ surveyPickedTip: tip });
+    browser.storage.local.set({ surveyToOpenOnStartup: tip });
   }
 
   // Do the tip action.
@@ -374,13 +375,7 @@ function onContentScriptMessage(message, sender, sendResponse) {
   browser.runtime.onMessage.removeListener(onContentScriptMessage);
 
   // Set the open count to the max.
-  browser.storage.local.get(null).then(storage => {
-    if (!storage) {
-      storage = {};
-    }
-    storage.surveyOpenedCount = MAX_SURVEY_OPEN_COUNT;
-    browser.storage.local.set(storage);
-  });
+  browser.storage.local.set({ surveyOpenedCount: MAX_SURVEY_OPEN_COUNT });
 }
 
 /**
@@ -413,11 +408,8 @@ async function maybeOpenSurvey(tips, action) {
   // Get the number of times we've opened the survey over all sessions.  If it's
   // the max, don't open it again.
   let storage = await browser.storage.local.get(null);
-  if (
-    storage &&
-    typeof storage.surveyOpenedCount == "number" &&
-    storage.surveyOpenedCount >= MAX_SURVEY_OPEN_COUNT
-  ) {
+  let surveyOpenedCount = (storage && storage.surveyOpenedCount) || 0;
+  if (surveyOpenedCount >= MAX_SURVEY_OPEN_COUNT) {
     return;
   }
 
@@ -445,14 +437,8 @@ async function maybeOpenSurvey(tips, action) {
 
   // Update the opened count.
   openedSurveyInCurrentSession = true;
-  if (!storage) {
-    storage = {};
-  }
-  if (typeof storage.surveyOpenedCount != "number") {
-    storage.surveyOpenedCount = 0;
-  }
-  storage.surveyOpenedCount++;
-  await browser.storage.local.set(storage);
+  surveyOpenedCount++;
+  await browser.storage.local.set({ surveyOpenedCount });
 
   // Inject our content script that listens for when the user starts the survey.
   // Note that since we open the survey no more than once per session, we don't
@@ -562,9 +548,9 @@ async function enroll() {
 
   // If we need to open a survey on startup (see onResultPicked), do so now.
   let storage = await browser.storage.local.get(null);
-  if (storage && storage.surveyPickedTip) {
-    await maybeOpenSurvey([storage.surveyPickedTip], "picked");
-    await browser.storage.local.clear();
+  if (storage && storage.surveyToOpenOnStartup) {
+    await maybeOpenSurvey([storage.surveyToOpenOnStartup], "picked");
+    await browser.storage.local.remove("surveyToOpenOnStartup");
   }
 
   sendTestMessage("enrolled");

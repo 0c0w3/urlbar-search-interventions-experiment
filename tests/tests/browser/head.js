@@ -25,7 +25,7 @@ const { WebExtensionPolicy } = Cu.getGlobalForObject(
 );
 
 // The path of the add-on file relative to `getTestFilePath`.
-const ADDON_PATH = "urlbar_interventions-1.0a4.zip";
+const ADDON_PATH = "urlbar_interventions-1.0a5.zip";
 
 // Use SIGNEDSTATE_MISSING when testing an unsigned, in-development version of
 // the add-on and SIGNEDSTATE_PRIVILEGED when testing the production add-on.
